@@ -1,0 +1,14 @@
+[package]
+name = "moll"
+version = "0.1.0"
+edition = "2021"
+RUSTFLAGS="-Z proc-macro-backtrace"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+intmap = "3.1.0"
+proc-macro2 = "1.0.94"
+quote = "1.0.40"
+
