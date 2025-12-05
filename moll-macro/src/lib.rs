@@ -7,10 +7,9 @@ mod compile;
 
 use std::vec;
 
-use proc_macro::{self, TokenStream};
+use proc_macro;
 use proc_macro2::{Group, Ident, Span};
 use quote::quote;
-use intmap::IntMap;
 
 
 

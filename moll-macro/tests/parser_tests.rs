@@ -1,4 +1,4 @@
-use moll;
+use moll_macro;
 use std::any::Any;
 
 // moll::parser!{
@@ -250,7 +250,7 @@ use std::any::Any;
 // }
 
 
-moll::parser!{}
+moll_macro::parser!{}
 
 
 #[cfg(test)]

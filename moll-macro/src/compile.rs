@@ -6,8 +6,6 @@ use proc_macro2::{Group, Ident, Punct, Span, TokenStream, TokenTree};
 
 // use crate::{ast::Token, expanded_ast::Parser, parser};
 
-use crate::compile;
-
 use super::expanded_ast as ast;
 
 struct ParserStateContext {
@@ -229,7 +227,7 @@ fn translate_exec_params<'a, 'b: 'a>(parser_desc: &ast::Parser, context_exec_par
 /// 
 /// Example:
 // 
-///````
+///```` ignore
 /// Rule foo() -> String {
 ///      ... => {...}
 ///      ... => {...}

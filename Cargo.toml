@@ -1,14 +1,23 @@
-[package]
-name = "moll"
-version = "0.1.0"
+[workspace]
+members = ["moll-macro"]
+resolver = "2"
+
+#[package]
+#name = "moll"
+#version = "0.1.0"
+#edition = "2021"
+#RUSTFLAGS="-Z proc-macro-backtrace"
+#
+#[lib]
+#proc-macro = true
+#
+#
+#
+
+[workspace.package]
+version = "0.0.1"
+authors = [ "Baret Buckley <buckleybaret@gmail.com>" ]
+license = "MIT"
+repository = "https://github.com/baretbuckley/moll"
 edition = "2021"
-RUSTFLAGS="-Z proc-macro-backtrace"
-
-[lib]
-proc-macro = true
-
-[dependencies]
-intmap = "3.1.0"
-proc-macro2 = "1.0.94"
-quote = "1.0.40"
-
+rust-version = "1.84.0"

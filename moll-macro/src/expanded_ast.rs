@@ -1,5 +1,4 @@
 use proc_macro2::{Group, Ident, TokenStream};
-use intmap::IntMap;
 
 
 

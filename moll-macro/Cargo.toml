@@ -1,0 +1,19 @@
+[package]
+name = "moll-macro"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Procedural macros for the moll parser generator."
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+intmap = "3.1.0"
+proc-macro2 = "1.0.94"
+quote = "1.0.40"
+
+[lib]
+proc-macro = true
+name = "moll_macro"
+path = "src/lib.rs"
