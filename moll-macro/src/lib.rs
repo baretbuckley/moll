@@ -4,12 +4,17 @@ mod ast;
 mod expanded_ast;
 mod grammar;
 mod compile;
+mod translate;
+
+// use moll_builder::parser::grammar::Grammar;
 
 use std::vec;
 
 use proc_macro;
 use proc_macro2::{Group, Ident, Span};
 use quote::quote;
+
+use crate::translate::translate_grammar;
 
 
 
@@ -88,6 +93,14 @@ pub fn parser(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     // println!("compiled grammar: \n{}", compile::compile_parser(&mut test));
 
+    // _ = translate_grammar(grammar::Grammar::new_from( 'S', vec![
+    //     grammar::Rule {result: 'S', rule: vec![grammar::Token::NonTerminal('S'), grammar::Token::Terminal('+'), grammar::Token::NonTerminal('P')]},
+    //     grammar::Rule {result: 'S', rule: vec![grammar::Token::NonTerminal('P')]},
+    //     grammar::Rule {result: 'P', rule: vec![grammar::Token::NonTerminal('P'), grammar::Token::Terminal('*'), grammar::Token::NonTerminal('V')]},
+    //     grammar::Rule {result: 'P', rule: vec![grammar::Token::NonTerminal('V')]},
+    //     grammar::Rule {result: 'V', rule: vec![grammar::Token::Terminal('#')]},
+    //     grammar::Rule {result: 'V', rule: vec![grammar::Token::Terminal('i')]},
+    // ]));
     
     compile::compile_parser(&mut test).into()
     // TokenStream::new()

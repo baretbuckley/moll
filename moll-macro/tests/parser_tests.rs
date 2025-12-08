@@ -260,10 +260,8 @@ mod tests {
     
 
     #[test]
-    fn general_testing() {
-        let mut p = Parser::new();
-        let s = "bbbbbbaaaa";
-        println!("{}", p.parse(s));
+    fn cfg_parser_table_assembler() {
+        
         
     }
 }

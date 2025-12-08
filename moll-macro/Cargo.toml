@@ -12,6 +12,7 @@ rust-version.workspace = true
 intmap = "3.1.0"
 proc-macro2 = "1.0.94"
 quote = "1.0.40"
+moll-builder.workspace = true
 
 [lib]
 proc-macro = true

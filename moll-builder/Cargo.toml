@@ -1,0 +1,19 @@
+[package]
+name = "moll-builder"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Library for constructing parser tables from cfg grammar."
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cargo-expand = "1.0.106"
+intmap = "3.0.1"
+quote = "1.0.40"
+
+
+[lib]
+name = "moll_builder"
+path = "src/lib.rs"
