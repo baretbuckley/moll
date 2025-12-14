@@ -4,7 +4,7 @@ use super::grammar;
 use super::builder;
 use super::runtime;
 
-Tokens {
+enum Tokens {
     S,
     P,
     V,
