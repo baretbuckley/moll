@@ -6,6 +6,7 @@ use proc_macro2::{Group, Ident, Punct, Span, TokenStream, TokenTree};
 
 // use crate::{ast::Token, expanded_ast::Parser, parser};
 
+
 use super::expanded_ast as ast;
 
 struct ParserStateContext {
@@ -52,11 +53,15 @@ impl Context {
 /// 
 /// resulting enum is:
 /// ```` ignore
-/// enum {
+/// #[allow(non_camel_case_types)]
+/// #[derive(Clone, Copy)]
+/// enum __<ParserName>State {
+///     #[allow(non_camel_case_types)]
 ///     __0,
+///     #[allow(non_camel_case_types)]
 ///     __1,
-///     __2,
 ///     ...
+///     #[allow(non_camel_case_types)]
 ///     __<num_states-1>,
 /// }
 /// ````
@@ -95,8 +100,11 @@ fn compile_parser_state(parser_desc: &ast::Parser, state_context: &mut ParserSta
 /// 
 /// resulting enum is:
 /// ```` ignore
+/// #[allow(non_camel_case_types)]
 /// enum __<ParserName>NonTerminal {
+///     #[allow(non_camel_case_types)]
 ///     <NonTerm1>,
+///     #[allow(non_camel_case_types)]
 ///     <NonTerm2>,
 ///     ...
 /// }
@@ -179,21 +187,21 @@ fn compile_parser_rules(parser_desc: &ast::Parser, parser_rule_ids: &mut (Ident,
 /// ````
 /// produces exec rules:
 /// \_\_execute_foo_0 and \_\_execute_foo_1
-fn translate_exec_params<'a, 'b: 'a>(parser_desc: &ast::Parser, context_exec_param_types: &'b mut HashMap<(usize, usize), Vec<TokenStream>>) -> (Vec<Vec<TokenTree>>, Vec<Vec<&'a TokenStream>>) {
-    let mut idents: Vec<Vec<TokenTree>> = Vec::new();
+fn translate_exec_params<'a, 'b: 'a>(parser_desc: &ast::Parser, context_exec_param_types: &'b mut HashMap<(usize, usize), Vec<TokenStream>>) -> (Vec<Vec<Ident>>, Vec<Vec<&'a TokenStream>>) {
+    let mut idents: Vec<Vec<Ident>> = Vec::new();
     let mut types: Vec<Vec<&TokenStream>> = Vec::new();
 
     // Substantiate idents vec and contex_exec_param_types
     for (r_idx, r) in parser_desc.rules.iter().enumerate() {
         for (prod_idx, prod) in r.prods.iter().enumerate() {
-            let mut ident: Vec<TokenTree> = Vec::new();
+            let mut ident: Vec<Ident> = Vec::new();
             let mut param_types: Vec<TokenStream> = Vec::new();
             for (param_ident, param_type_ref) in prod.params.iter() {
                 match param_ident {
                     None => 
-                        ident.push(TokenTree::Punct(Punct::new('_', proc_macro2::Spacing::Alone))),
+                        ident.push(Ident::new("_", Span::call_site())),
                     Some(param_ident) => 
-                        ident.push(TokenTree::Ident(param_ident.clone())),
+                        ident.push(param_ident.clone()),
                 }
                 param_types.push(parser_desc.rules[*param_type_ref].return_type.clone());
             }
@@ -569,5 +577,328 @@ pub fn compile_parser(parser_desc: &ast::Parser) -> TokenStream {
             }
         }
     }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // TODO: make extended ASTs from actual parser descriptions and test that the generated tokenstream matches expected output
+
+    
+
+    #[test]
+    fn test_compile_parser_state() {
+        // Test implementation
+        let mut context = ParserStateContext::new();
+        let parser_desc = ast::Parser {
+            parser_name: Ident::new("TestParser", Span::call_site()),
+            num_states: 3,
+            non_terminals: Vec::new(),
+            rules: Vec::new(),
+            init_rule: 0,
+            input_type: TokenStream::new(),
+            iterator_fn: TokenStream::new(),
+            element_type: TokenStream::new(),
+            terminal_transitions: Vec::new(),
+            non_terminal_transitions: Vec::new(),
+            eoi_actions: Vec::new(),
+        };
+        let token_stream = compile_parser_state(&parser_desc, &mut context);
+        let expected = quote! {
+            #[allow(non_camel_case_types)]
+            #[derive(Clone, Copy)]
+            enum __TestParserState {
+                #[allow(non_camel_case_types)]
+                __0,
+                #[allow(non_camel_case_types)]
+                __1,
+                #[allow(non_camel_case_types)]
+                __2,
+            }
+        };
+        assert_eq!(token_stream.to_string(), expected.to_string());
+        assert_eq!(context.ident.to_string(), "__TestParserState");
+        assert_eq!(context.idx.len(), 3);
+        assert_eq!(context.idx[0].to_string(), "__0");
+        assert_eq!(context.idx[1].to_string(), "__1");
+        assert_eq!(context.idx[2].to_string(), "__2");
+    }
+
+    #[test]
+    fn test_compile_parser_non_terminals() {
+        // Test implementation
+        let mut context = (Ident::new("INVALID", Span::call_site()), Vec::new());
+        let parser_name = Ident::new("TestParser", Span::call_site());
+        let non_terms = vec![
+            Ident::new("Expr", Span::call_site()),
+            Ident::new("Term", Span::call_site()),
+        ];
+        let token_stream = compile_parser_non_terminals(&parser_name, &non_terms, &mut context);
+        let expected = quote! {
+            #[allow(non_camel_case_types)]
+            enum __TestParserNonTerminal {
+                #[allow(non_camel_case_types)]
+                Expr,
+                #[allow(non_camel_case_types)]
+                Term,
+            }
+        };
+        assert_eq!(token_stream.to_string(), expected.to_string());
+        assert_eq!(context.0.to_string(), "__TestParserNonTerminal");
+        assert_eq!(context.1.len(), 2);
+        assert_eq!(context.1[0].to_string(), "Expr");
+        assert_eq!(context.1[1].to_string(), "Term");
+    }
+
+    #[test]
+    fn test_compile_parser_rules() {
+        // Test implementation
+        let parser_desc = ast::Parser {
+            parser_name: Ident::new("TestParser", Span::call_site()),
+            num_states: 0,
+            non_terminals: vec![
+                Ident::new("Expr", Span::call_site()),
+                Ident::new("Term", Span::call_site()),
+            ],
+            rules: vec![
+                ast::Rule {
+                    non_term_idx: 0,
+                    prods: vec![
+                        ast::Production {
+                            params: vec![(Some(Ident::new("e", Span::call_site())), 0)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { e }),
+                        },
+                        ast::Production {
+                            params: vec![(Some(Ident::new("t", Span::call_site())), 1)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { t }),
+                        },
+                    ],
+                    return_type: quote! { String },
+                },
+                ast::Rule {
+                    non_term_idx: 1,
+                    prods: vec![
+                        ast::Production {
+                            params: vec![(Some(Ident::new("n", Span::call_site())), 0)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { n }),
+                        },
+                    ],
+                    return_type: quote! { String },
+                },
+            ],
+            init_rule: 0,
+            input_type: TokenStream::new(),
+            iterator_fn: TokenStream::new(),
+            element_type: TokenStream::new(),
+            terminal_transitions: Vec::new(),
+            non_terminal_transitions: Vec::new(),
+            eoi_actions: Vec::new(),
+        };
+        let mut parser_rule_ids = (Ident::new("INVALID", Span::call_site()), Vec::new());
+        let token_stream = compile_parser_rules(&parser_desc, &mut parser_rule_ids);
+        let expected = quote! {
+            #[allow(non_camel_case_types)]
+            enum __TestParserRules {
+                #[allow(non_camel_case_types)]
+                Expr_0,
+                #[allow(non_camel_case_types)]
+                Expr_1,
+                #[allow(non_camel_case_types)]
+                Term_0
+            }
+        };
+        assert_eq!(token_stream.to_string(), expected.to_string());
+        assert_eq!(parser_rule_ids.0.to_string(), "__TestParserRules");
+        assert_eq!(parser_rule_ids.1.len(), 2);
+        assert_eq!(parser_rule_ids.1[0].len(), 2);
+        assert_eq!(parser_rule_ids.1[1].len(), 1);
+        assert_eq!(parser_rule_ids.1[0][0].to_string(), "Expr_0");
+        assert_eq!(parser_rule_ids.1[0][1].to_string(), "Expr_1");
+        assert_eq!(parser_rule_ids.1[1][0].to_string(), "Term_0");
+    }
+
+    #[test]
+    fn test_translate_exec_params() {
+        // Test implementation
+        let mut context_exec_param_types = HashMap::new();
+        let parser_desc = ast::Parser {
+            parser_name: Ident::new("TestParser", Span::call_site()),
+            num_states: 0,
+            non_terminals: vec![
+                Ident::new("Expr", Span::call_site()),
+                Ident::new("Term", Span::call_site()),
+            ],
+            rules: vec![
+                ast::Rule {
+                    non_term_idx: 0,
+                    prods: vec![
+                        ast::Production {
+                            params: vec![(Some(Ident::new("e", Span::call_site())), 0)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { e }),
+                        },
+                        ast::Production {
+                            params: vec![(Some(Ident::new("t", Span::call_site())), 1)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { t }),
+                        },
+                    ],
+                    return_type: quote! { String },
+                },
+                ast::Rule {
+                    non_term_idx: 1,
+                    prods: vec![
+                        ast::Production {
+                            params: vec![(Some(Ident::new("n", Span::call_site())), 0), (Some(Ident::new("s", Span::call_site())), 1)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { n }),
+                        },
+                        ast::Production {
+                            params: vec![(None, 1)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { n }),
+                        }
+                    ],
+                    return_type: quote! { Vec<String> },
+                },
+            ],
+            init_rule: 0,
+            input_type: TokenStream::new(),
+            iterator_fn: TokenStream::new(),
+            element_type: TokenStream::new(),
+            terminal_transitions: Vec::new(),
+            non_terminal_transitions: Vec::new(),
+            eoi_actions: Vec::new(),
+        };
+        let (idents, types) = translate_exec_params(&parser_desc, &mut context_exec_param_types);
+        
+        // Check that identifiers are correctly generated
+        assert_eq!(idents.len(), 4);
+        assert_eq!(idents[0].len(), 1);
+        assert_eq!(idents[1].len(), 1);
+        assert_eq!(idents[2].len(), 2);
+        assert_eq!(idents[3].len(), 1);
+        assert_eq!(idents[0][0].to_string(), "e");
+        assert_eq!(idents[1][0].to_string(), "t");
+        assert_eq!(idents[2][0].to_string(), "n");
+        assert_eq!(idents[2][1].to_string(), "s");
+        assert_eq!(idents[3][0].to_string(), "_");
+
+        // Check that types are correctly generated
+        assert_eq!(types.len(), 4);
+        assert_eq!(types[0].len(), 1);
+        assert_eq!(types[1].len(), 1);
+        assert_eq!(types[2].len(), 2);
+        assert_eq!(types[3].len(), 1);
+        assert_eq!(types[0][0].to_string(), quote! { String }.to_string());
+        assert_eq!(types[1][0].to_string(), quote! { Vec<String> }.to_string());
+        assert_eq!(types[2][0].to_string(), quote! { String }.to_string());
+        assert_eq!(types[2][1].to_string(), quote! { Vec<String> }.to_string());
+        assert_eq!(types[3][0].to_string(), quote! { Vec<String> }.to_string());
+
+        // Check that context is correctly filled
+        assert_eq!(context_exec_param_types.len(), 4);
+        assert_eq!(context_exec_param_types.get(&(0, 0)).unwrap().len(), 1);
+        assert_eq!(context_exec_param_types.get(&(0, 1)).unwrap().len(), 1);
+        assert_eq!(context_exec_param_types.get(&(1, 0)).unwrap().len(), 2);
+        assert_eq!(context_exec_param_types.get(&(1, 1)).unwrap().len(), 1);
+        
+        assert_eq!(context_exec_param_types.get(&(0, 0)).unwrap()[0].to_string(), quote! { String }.to_string());
+        assert_eq!(context_exec_param_types.get(&(0, 1)).unwrap()[0].to_string(), quote! { Vec<String> }.to_string());
+        assert_eq!(context_exec_param_types.get(&(1, 0)).unwrap()[0].to_string(), quote! { String }.to_string());
+        assert_eq!(context_exec_param_types.get(&(1, 0)).unwrap()[1].to_string(), quote! { Vec<String> }.to_string());
+        assert_eq!(context_exec_param_types.get(&(1, 1)).unwrap()[0].to_string(), quote! { Vec<String> }.to_string());
+        
+    }
+
+    #[test]
+    fn test_translate_exec_reduce_idents() {
+        // Test implementation
+        let mut context_exec_ids = IntMap::new();
+        let mut context_reduce_ids = IntMap::new();
+        let parser_desc = ast::Parser {
+            parser_name: Ident::new("TestParser", Span::call_site()),
+            num_states: 0,
+            non_terminals: vec![
+                Ident::new("Expr", Span::call_site()),
+                Ident::new("Term", Span::call_site()),
+            ],
+            rules: vec![
+                ast::Rule {
+                    non_term_idx: 0,
+                    prods: vec![
+                        ast::Production {
+                            params: vec![(Some(Ident::new("e", Span::call_site())), 0)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { e }),
+                        },
+                        ast::Production {
+                            params: vec![(Some(Ident::new("t", Span::call_site())), 1)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { t }),
+                        },
+                    ],
+                    return_type: quote! { String },
+                },
+                ast::Rule {
+                    non_term_idx: 1,
+                    prods: vec![
+                        ast::Production {
+                            params: vec![(Some(Ident::new("n", Span::call_site())), 0)],
+                            tokens_count: 1,
+                            exec: Group::new(proc_macro2::Delimiter::Brace, quote! { n }),
+                        },
+                    ],
+                    return_type: quote! { u32 },
+                },
+            ],
+            init_rule: 0,
+            input_type: TokenStream::new(),
+            iterator_fn: TokenStream::new(),
+            element_type: TokenStream::new(),
+            terminal_transitions: Vec::new(),
+            non_terminal_transitions: Vec::new(),
+            eoi_actions: Vec::new(),
+        };
+        let (exec_idents, reduce_idents) = translate_exec_reduce_idents(&parser_desc, &mut context_exec_ids, &mut context_reduce_ids);
+        
+        // Check that exec identifiers are correctly generated
+        assert_eq!(exec_idents.len(), 3);
+        assert_eq!(exec_idents[0].to_string(), "execute_Expr_0");
+        assert_eq!(exec_idents[1].to_string(), "execute_Expr_1");
+        assert_eq!(exec_idents[2].to_string(), "execute_Term_0");
+
+        // Check that reduce identifiers are correctly generated
+        assert_eq!(reduce_idents.len(), 3);
+        assert_eq!(reduce_idents[0].to_string(), "reduce_Expr_0");
+        assert_eq!(reduce_idents[1].to_string(), "reduce_Expr_1");
+        assert_eq!(reduce_idents[2].to_string(), "reduce_Term_0");
+
+        // Check that context is correctly filled
+        assert_eq!(context_exec_ids.len(), 2);
+        assert_eq!(context_reduce_ids.len(), 2);
+        assert_eq!(context_exec_ids.get(0).unwrap().len(), 2);
+        assert_eq!(context_exec_ids.get(1).unwrap().len(), 1);
+        assert_eq!(context_reduce_ids.get(0).unwrap().len(), 2);
+        assert_eq!(context_reduce_ids.get(1).unwrap().len(), 1);
+        assert_eq!(context_exec_ids.get(0).unwrap()[0].to_string(), "execute_Expr_0");
+        assert_eq!(context_exec_ids.get(0).unwrap()[1].to_string(), "execute_Expr_1");
+        assert_eq!(context_exec_ids.get(1).unwrap()[0].to_string(), "execute_Term_0");
+        assert_eq!(context_reduce_ids.get(0).unwrap()[0].to_string(), "reduce_Expr_0");
+        assert_eq!(context_reduce_ids.get(0).unwrap()[1].to_string(), "reduce_Expr_1");
+        assert_eq!(context_reduce_ids.get(1).unwrap()[0].to_string(), "reduce_Term_0");
+        
+    }
+
+    // #[test]
+    // fn test_compile_parser() {
+    //     // Test implementation
+    // }
 }
 
