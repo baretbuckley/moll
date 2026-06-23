@@ -1,18 +1,18 @@
 use moll_macro;
 use std::any::Any;
 
-// moll::parser!{
-//     Parser parser for String {
-//         Init Rule A -> String {
-//             a:A() "a" => {a.push("b"); a}
-//             b:B() => {b}
-//         }
-//         Rule B -> String {
-//             b:B() "b" => {b.push("a"); b}
-//             "b" => {"a".to_string()}
-//         }
-//     }
-// }
+moll::parser!{
+    Parser parser for String {
+        Init Rule A -> String {
+            a:A() "a" => {a.push("b"); a}
+            b:B() => {b}
+        }
+        Rule B -> String {
+            b:B() "b" => {b.push("a"); b}
+            "b" => {"a".to_string()}
+        }
+    }
+}
 
 /// {A -> .Aa, A -> .B, B-> .Bb, B->b}
 /// {A -> A.a}

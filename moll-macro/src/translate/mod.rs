@@ -1,6 +1,9 @@
 use moll_builder::parser::{ParserBuild, grammar::{Grammar}};
 use super::expanded_ast;
 use super::ast;
+mod normalize;
+mod external_call_manager;
+mod normalized_ast;
 
 
 
@@ -42,7 +45,7 @@ use super::ast;
 //     pub eoi_actions : Vec<EOIAction>, // [state idx] -> end of inpuy action
 // }
 
-impl ParserBuild for expanded_ast::Parser {
+impl ParserBuild<u32, u32> for expanded_ast::Parser {
     fn new() -> Self {
         unimplemented!()
     }
@@ -51,26 +54,28 @@ impl ParserBuild for expanded_ast::Parser {
         unimplemented!()
     }
 
-    fn add_connection(&mut self, condition: moll_builder::parser::grammar::Token, from: usize, to: usize) {
+    fn add_connection(&mut self, condition: moll_builder::parser::grammar::Token<u32, u32>, from: usize, to: usize) {
         unimplemented!()
     }
 
-    fn new_reduction(&mut self, condition: moll_builder::parser::grammar::Token, from: usize, rule: moll_builder::parser::grammar::RuleIdx) {
+    fn new_reduction(&mut self, condition: moll_builder::parser::grammar::Token<u32, u32>, from: usize, rule: moll_builder::parser::grammar::RuleIdx) {
         unimplemented!()
     }
 }
 
 pub fn translate_grammar<Term, Nonterm>(
-    ast: &ast::AST,
+    ast: &mut ast::Parser,
 ) -> &Grammar<Term, Nonterm>
 where
     Term: Copy + std::fmt::Debug + Eq + std::hash::Hash,
     Nonterm: Copy + std::fmt::Debug + Eq + std::hash::Hash,
 {
+    // ast = normalize::normalize_production_steps(ast);
 
 
     
     // Placeholder for translation logic
-    grammar.clone()
+    // grammar.clone()
+    unimplemented!()
 }
 

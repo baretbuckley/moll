@@ -5,6 +5,8 @@ mod expanded_ast;
 mod grammar;
 mod compile;
 mod translate;
+mod normalize;
+// mod parserrust;
 
 // use moll_builder::parser::grammar::Grammar;
 

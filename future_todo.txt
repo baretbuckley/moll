@@ -1,0 +1,26 @@
+This() shorthand:
+    Shorthand to call the parent rule
+
+paramterize rules:
+    allow rules to take in parameters such as taking in a Rule or type
+    Rule Parameterized(caller: Rule, ret_type: Type) -> ret_type {
+        caller() => {
+            #ret_type{ elem1 = ... }
+        }
+    }
+    Issues:
+        Rule and Type parameters feel like they should be different spaces
+        should a rule be allowed to be used in the body?
+    
+Access to internals:
+    Should internals be accessable for debug or error purposes? if so how?
+    maybe internal keyword?
+
+Determine how to better distiguish namespaced rules and constants:
+    currently the only difference is the use of parenthises
+    but rules access internal rule references and consts are paseted
+    into the outputed code referenceing external const values
+
+fix any stack:
+    currently value stack in resulting code is constructed useing box any,
+    impliment heterogeneous stack so as to use contiguous memory
