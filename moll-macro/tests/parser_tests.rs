@@ -257,11 +257,16 @@ moll_macro::parser!{}
 mod tests {
     use super::*;
 
+
+
     
 
     #[test]
     fn cfg_parser_table_assembler() {
-        
-        
+        fn foo<'a>(x: &'a i32) -> &'a i32 {
+            x
+        }
+        let bar = foo::<'static>;
+        bar(&1);
     }
 }

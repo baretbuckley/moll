@@ -1,11 +1,13 @@
 use super::ast;
 
+
+
 moll::moll_define!{
 
     Parser MollParser for MollTokenIter -> ast::MollRoot {
 
         Rule Surface() -> ast::Parser {
-            "Parser" parser_name:moll::Ident "for" return_type:moll::RSType() '{' body:ParserElement() '}' => {
+            "Parser" parser_name:moll::Ident "for" return_type:moll::RSType() '{' body:ParserElement() '}' MyEnum->A() => {
                 ast::Parser{name: parser_name, return_type: return_type, parser_elements: body}
             }
         }
