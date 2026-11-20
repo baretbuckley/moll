@@ -169,7 +169,8 @@ impl<T: std::fmt::Display, N: std::fmt::Display> Display for DisplayItem<'_, T, 
         for i in self.item.pos..rule.rule.len() {
             _ = write!(f, " {}", rule.rule[i]);
         }
-        write!(f, "")
+        write!(f, "");
+        Ok(())
     }
 }
 

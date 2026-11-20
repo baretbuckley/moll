@@ -3,11 +3,10 @@ use std::{collections::HashMap, iter::zip, unreachable};
 // use crate::{ast::{BaseProduction, CapturedProduciton}, translate::normalize};
 
 use super::ast as parse_ast;
-mod normalized_ast;
+pub mod normalized_ast;
 use normalized_ast::{Parser, Rule, Production, Condition, Terminal};
-mod external_call_manager;
 
-use proc_macro2::{Group, Ident, Literal, Span, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 
 
@@ -17,9 +16,8 @@ struct RuleManager {
     hash_idents: HashMap<Ident, usize>,
 
     // TMP, this really shouldn't be needed, but, I rust don't want to give me static tokenstreams :(
-    literal_tokenstream: TokenStream,
+    // literal_tokenstream: TokenStream,
     const_tokenstream: TokenStream,
-    epsilon_tokenstream: TokenStream,
 }
 
 impl RuleManager {
@@ -27,9 +25,8 @@ impl RuleManager {
         RuleManager { 
             rules: Vec::new(), 
             hash_idents: HashMap::new(),
-            literal_tokenstream: quote!{Vec<T>},
+            // literal_tokenstream: quote!{Vec<T>},
             const_tokenstream: quote!{Ident},
-            epsilon_tokenstream: quote!{()},
         }
     }
     // Registers a rule with the manager, returning its index. 
@@ -53,10 +50,10 @@ impl RuleManager {
         let rule_ref = &mut self.rules[idx];
         let old_ident = &rule_ref.name;
 
+        print!("Updating rule {}, old: {}, new: {}\n", idx, old_ident, rule.name);
+
         // Attempt to remove the old rule from 'hash_idents', panic if it fails to find it
-        if self.hash_idents.remove(old_ident) == None {
-            panic!("Failed to update Rule: Rule {} not found.", old_ident);
-        }
+        _ = self.hash_idents.remove(old_ident);
         
         // Update the value to rule in the vector and insert it in hash_idents with the new name
         *rule_ref = rule;
@@ -69,8 +66,11 @@ impl RuleManager {
     fn regester_or_update(&mut self, rule: Rule) -> usize {
         match self.hash_idents.get(&rule.name) {
             Some(idx) => {
+                // Note: rule was found by name, so that doesn;t need to be updated
+                // just the rule value
                 let idx_tmp = *idx;
-                self.update(*idx, rule);
+
+                self.rules[*idx] = rule;
                 idx_tmp
             },
             None => self.register(rule),
@@ -82,8 +82,9 @@ impl RuleManager {
     // Can be set after using the update function.
     fn reserve(&mut self) -> usize {
         let idx = self.rules.len();
+        print!("Reserved rule at idx: {}\n", idx);
         self.rules.push( Rule {
-                name: Ident::new(&format!("Reserved{}", idx), Span::call_site()), 
+                name: Ident::new("Reserved", Span::call_site()), 
                 return_type: quote!{()}, 
                 productions: Vec::new()
         } );
@@ -109,12 +110,14 @@ impl RuleManager {
     fn get_rule_id_or_reserve(&mut self, ident: &Ident) -> usize {
         match self.hash_idents.get(ident) {
             Some(idx) => *idx,
-            None => self.reserve(),
+            None => self.reserve_ident(ident.clone()),
         }
     }
-    fn get_rule(&self, ident: &Ident) -> &Rule {
-        let idx = self.get_rule_id(ident);
+    fn get_rule(&self, idx: usize) -> &Rule {
         &self.rules[idx]
+    }
+    fn get_rule_mut(&mut self, idx: usize) -> &mut Rule {
+        &mut self.rules[idx]
     }
     fn len(&self) -> usize {
         self.rules.len()
@@ -134,16 +137,16 @@ impl RuleManager {
 fn terminal_type<'a>(terminal: &Terminal, rule_manager: &'a RuleManager) -> &'a TokenStream {
     // TODO: fix to return correct type for literals and consts
     match terminal {
-        Terminal::Literal(_) => &rule_manager.literal_tokenstream,
+        // Terminal::Literal(_) => &rule_manager.literal_tokenstream,
         Terminal::Rule(idx) => rule_manager.get_rule_type(*idx),
         Terminal::Const(_) => &rule_manager.const_tokenstream,
-        Terminal::Epsilon() => &rule_manager.epsilon_tokenstream,
+        // Terminal::Epsilon() => &rule_manager.epsilon_tokenstream,
     }
 }
 
 // Generate a rule for a group of captured productions inserting it into
 // the given Rule Manager. Returning a terminal referencing the generated rule 
-fn generate_typed_group_rule(captured: &Vec<parse_ast::CapturedCondition>, rule_manager: &mut RuleManager) -> Terminal {
+fn generate_typed_group_rule(captured: Vec<parse_ast::CapturedCondition>, rule_manager: &mut RuleManager) -> Terminal {
     let mut normalized_tokens = Vec::new();
 
     // Assemble idents for the captured productions as "arg{idx}"
@@ -156,7 +159,7 @@ fn generate_typed_group_rule(captured: &Vec<parse_ast::CapturedCondition>, rule_
     }
     
     // Normalize captured productions steps
-    for (step, ident) in zip(captured.iter(), arg_idents.iter()) {
+    for (step, ident) in zip(captured.into_iter(), arg_idents.iter()) {
         normalized_tokens.push(Condition::Captured((*ident).clone(), normalize_captured(step, rule_manager)));
     }
 
@@ -169,7 +172,7 @@ fn generate_typed_group_rule(captured: &Vec<parse_ast::CapturedCondition>, rule_
     }).collect::<Vec<_>>();
     let production = Production {
         condition: normalized_tokens,
-        code_segment: quote!{(#(#arg_idents),*)},
+        code_segment: quote!{{(#(#arg_idents),*)}},
     };
 
     let rule = Rule {
@@ -186,10 +189,10 @@ fn generate_typed_group_rule(captured: &Vec<parse_ast::CapturedCondition>, rule_
 
 // Generate a rule for a repeated captured production inserting it into
 // the given Rule Manager. Returning a terminal referencing the generated rule
-fn generate_typed_repeat_rule(captured: &parse_ast::CapturedCondition, min: usize, rule_manager: &mut RuleManager) -> Terminal {
+fn generate_typed_repeat_rule(captured: parse_ast::CapturedCondition, min: usize, rule_manager: &mut RuleManager) -> Terminal {
     
     // Normalize the captured production
-    let mut normalized_prod = normalize_captured(captured, rule_manager);
+    let normalized_prod = normalize_captured(captured, rule_manager);
 
     // Reserve a slot for the rule to get its id for use in recursive production conditions
     let rule_id = rule_manager.reserve();
@@ -202,12 +205,13 @@ fn generate_typed_repeat_rule(captured: &parse_ast::CapturedCondition, min: usiz
     // for min=1: S -> P
     let terminal_prod = match min {
         0 => Production {
-            condition: vec![Condition::Terminal(Terminal::Epsilon())],
-            code_segment: quote!{Vec::new()},
+            condition: Vec::new(),
+            // condition: vec![Condition::Terminal(Terminal::Epsilon())],
+            code_segment: quote!{{Vec::new()}},
         },
         1 => Production {
             condition: vec![Condition::Captured(Ident::new("term", Span::call_site()), normalized_prod.clone())],
-            code_segment: quote!{vec![term]},
+            code_segment: quote!{{vec![term]}},
         },
         _ => panic!("Unsupported min value for repeat: {}", min),
     };
@@ -240,7 +244,7 @@ fn generate_typed_repeat_rule(captured: &parse_ast::CapturedCondition, min: usiz
 // the given Rule Manager. Returning a terminal referencing the generated rule
 // Resulting rule does not return a value nor does it execute any code,
 // it is only used for parsing the repeated production
-fn generate_untyped_repeat_rule(repeated_condition: &parse_ast::FreeCondition, min: usize, rule_manager: &mut RuleManager) -> Terminal {
+fn generate_untyped_repeat_rule(repeated_condition: parse_ast::FreeCondition, min: usize, rule_manager: &mut RuleManager) -> Terminal {
     
     // Recursively normalize the production steps in the repeated condition
     let mut normalized_conds = Vec::new();
@@ -254,7 +258,8 @@ fn generate_untyped_repeat_rule(repeated_condition: &parse_ast::FreeCondition, m
     // for min=1: S -> P
     let terminal_prod = match min {
         0 => Production {
-            condition: vec![Condition::Terminal(Terminal::Epsilon())],
+            condition: Vec::new(),
+            // condition: vec![Condition::Terminal(Terminal::Epsilon())],
             code_segment: quote!{{}},
         },
         1 => Production {
@@ -283,7 +288,7 @@ fn generate_untyped_repeat_rule(repeated_condition: &parse_ast::FreeCondition, m
 
 }
 
-fn generate_typed_optional_rule(captured: &parse_ast::CapturedCondition, rule_manager: &mut RuleManager) -> Terminal {
+fn generate_typed_optional_rule(captured: parse_ast::CapturedCondition, rule_manager: &mut RuleManager) -> Terminal {
     // Normalize the captured production
     let normalized_prod = normalize_captured(captured, rule_manager);
 
@@ -296,7 +301,8 @@ fn generate_typed_optional_rule(captured: &parse_ast::CapturedCondition, rule_ma
     // S -> ε
     // S -> P
     let epsilon_prod = Production {
-        condition: vec![Condition::Terminal(Terminal::Epsilon())],
+        condition: Vec::new(),
+        // condition: vec![Condition::Terminal(Terminal::Epsilon())],
         code_segment: quote!{None},
     };
     let prod = Production {
@@ -317,9 +323,7 @@ fn generate_typed_optional_rule(captured: &parse_ast::CapturedCondition, rule_ma
 }
 
 fn generate_untyped_optional_rule(
-    condition: &parse_ast::FreeCondition,
-    // TM: &mut TM,
-    // ECM: ExternalCallManager,
+    condition: parse_ast::FreeCondition,
     rule_manager: &mut RuleManager,
 ) -> Terminal {
     // recursively normalize the production steps in the condition
@@ -333,7 +337,8 @@ fn generate_untyped_optional_rule(
     // S -> ε
     // S -> P
     let epsilon_prod = Production {
-        condition: vec![Condition::Terminal(Terminal::Epsilon())],
+        condition: Vec::new(),
+        // condition: vec![Condition::Terminal(Terminal::Epsilon())],
         code_segment: quote!{{}},
     };
     let prod = Production {
@@ -352,25 +357,27 @@ fn generate_untyped_optional_rule(
     Terminal::Rule(rule_id)
 }
 
-fn normalize_captured(captured: &parse_ast::CapturedCondition, rule_manager: &mut RuleManager) -> Terminal {
+fn normalize_captured(captured: parse_ast::CapturedCondition, rule_manager: &mut RuleManager) -> Terminal {
     match captured {
         parse_ast::CapturedCondition::NameSpaced(ident, name_spaced_production) => {
+            _ = ident;
+            _ = name_spaced_production;
             panic!("Namespaces not yet supported");
             unreachable!();
         },
         parse_ast::CapturedCondition::Group(captured_producitons) => {
-            generate_typed_group_rule(&captured_producitons, rule_manager)
+            generate_typed_group_rule(captured_producitons, rule_manager)
         },
         parse_ast::CapturedCondition::RepeatMinZero(captured_produciton) => {
-            generate_typed_repeat_rule(&captured_produciton, 0, rule_manager)
+            generate_typed_repeat_rule(*captured_produciton, 0, rule_manager)
         },
         parse_ast::CapturedCondition::RepeatMinOne(captured_produciton) => {
-            generate_typed_repeat_rule(&captured_produciton, 1, rule_manager)
+            generate_typed_repeat_rule(*captured_produciton, 1, rule_manager)
         },
         parse_ast::CapturedCondition::Optional(captured_produciton) => {
-            generate_typed_optional_rule(&captured_produciton, rule_manager)
+            generate_typed_optional_rule(*captured_produciton, rule_manager)
         },
-        parse_ast::CapturedCondition::Teminal(ident) => {
+        parse_ast::CapturedCondition::Terminal(ident) => {
             Terminal::Const(ident.clone())
         },
         parse_ast::CapturedCondition::Rule(ident) => {
@@ -378,6 +385,7 @@ fn normalize_captured(captured: &parse_ast::CapturedCondition, rule_manager: &mu
         },
         parse_ast::CapturedCondition::Literal(literal) => {
             // Terminal::Literal(TM.fromLiteral(literal))
+            _ = literal;
             panic!("Literal not yet supported");
             unreachable!();
         },
@@ -385,7 +393,7 @@ fn normalize_captured(captured: &parse_ast::CapturedCondition, rule_manager: &mu
 }
 
 fn normalize_free_condition(
-    condition: &parse_ast::FreeCondition, 
+    condition: parse_ast::FreeCondition, 
     normalized_tokens: &mut Vec<Condition>,
     // TM: &mut TM, ECM: ExternalCallManager, 
     rule_manager: &mut RuleManager
@@ -395,7 +403,8 @@ fn normalize_free_condition(
         //     normalized_tokens.push(Condition::Captured(*ident, normalize_captured(captured_produciton, rule_manager)));
         // },
         parse_ast::FreeCondition::NameSpaced(ident, name_spaced_production) => {
-
+            _ = ident;
+            _ = name_spaced_production;
         },
         parse_ast::FreeCondition::Group(base_productions) => {
             for step in base_productions {
@@ -403,29 +412,29 @@ fn normalize_free_condition(
             }
         },
         parse_ast::FreeCondition::RepeatMinZero(base_production) => {
-            let terminal = generate_untyped_repeat_rule(&**base_production, 0, rule_manager);
+            let terminal = generate_untyped_repeat_rule(*base_production, 0, rule_manager);
             normalized_tokens.push(Condition::Terminal(terminal))
         },
         parse_ast::FreeCondition::RepeatMinOne(base_production) => {
-            let terminal = generate_untyped_repeat_rule(&**base_production, 1, rule_manager);
+            let terminal = generate_untyped_repeat_rule(*base_production, 1, rule_manager);
             normalized_tokens.push(Condition::Terminal(terminal))
         },
         parse_ast::FreeCondition::Optional(base_production) => {
-            let terminal = generate_untyped_optional_rule(&**base_production, rule_manager);
+            let terminal = generate_untyped_optional_rule(*base_production, rule_manager);
             normalized_tokens.push(Condition::Terminal(terminal))
         },
-        parse_ast::FreeCondition::Teminal(ident) => {
+        parse_ast::FreeCondition::Terminal(ident) => {
             normalized_tokens.push(Condition::Terminal(Terminal::Const(ident.clone())))
         },
         parse_ast::FreeCondition::Rule(ident) => {
-            let terminal = Terminal::Rule(rule_manager.get_rule_id_or_reserve(ident));
+            let terminal = Terminal::Rule(rule_manager.get_rule_id_or_reserve(&ident));
             normalized_tokens.push(Condition::Terminal(terminal))
         },
         parse_ast::FreeCondition::Literal(literal) => {
             // let terminal = Terminal::Literal(TM.fromLiteral(literal));
             // normalized_tokens.push(Condition::Terminal(terminal))
+            _ = literal;
             panic!("Literal not yet supported");
-            unreachable!();
         },
     }
 }
@@ -438,10 +447,11 @@ fn normalize_condition(
 ) {
     match condition {
         parse_ast::Condition::Captured(ident, captured_produciton) => {
-            normalized_tokens.push(Condition::Captured(ident, normalize_captured(&captured_produciton, rule_manager)));
+            normalized_tokens.push(Condition::Captured(ident, normalize_captured(captured_produciton, rule_manager)));
         },
         parse_ast::Condition::NameSpaced(ident, name_spaced_production) => {
-
+            _ = ident;
+            _ = name_spaced_production
         },
         parse_ast::Condition::Group(base_productions) => {
             for step in base_productions {
@@ -449,18 +459,18 @@ fn normalize_condition(
             }
         },
         parse_ast::Condition::RepeatMinZero(base_production) => {
-            let terminal = generate_untyped_repeat_rule(&*base_production, 0, rule_manager);
+            let terminal = generate_untyped_repeat_rule(*base_production, 0, rule_manager);
             normalized_tokens.push(Condition::Terminal(terminal))
         },
         parse_ast::Condition::RepeatMinOne(base_production) => {
-            let terminal = generate_untyped_repeat_rule(&*base_production, 1, rule_manager);
+            let terminal = generate_untyped_repeat_rule(*base_production, 1, rule_manager);
             normalized_tokens.push(Condition::Terminal(terminal))
         },
         parse_ast::Condition::Optional(base_production) => {
-            let terminal = generate_untyped_optional_rule(&*base_production, rule_manager);
+            let terminal = generate_untyped_optional_rule(*base_production, rule_manager);
             normalized_tokens.push(Condition::Terminal(terminal))
         },
-        parse_ast::Condition::Teminal(ident) => {
+        parse_ast::Condition::Terminal(ident) => {
             normalized_tokens.push(Condition::Terminal(Terminal::Const(ident)))
         },
         parse_ast::Condition::Rule(ident) => {
@@ -470,8 +480,8 @@ fn normalize_condition(
         parse_ast::Condition::Literal(literal) => {
             // let terminal = Terminal::Literal(TM.fromLiteral(literal));
             // normalized_tokens.push(Condition::Terminal(terminal))
+            _ = literal;
             panic!("Literal not yet supported");
-            unreachable!();
         },
     }
 }
@@ -500,18 +510,37 @@ fn normalize_rule(src_rule: parse_ast::Rule, rule_manager: &mut RuleManager) {
             productions: norm_prods,
         }
     );
-
 }
 
-fn normalize_parser_element(element: parse_ast::ParserElement, rule_manager: &mut RuleManager) {
+fn initialize_rule(name: Ident, return_type: TokenStream, rule_manager: &mut RuleManager) -> usize {
+    rule_manager.register(
+        Rule {
+            name: name,
+            return_type: return_type,
+            productions: Vec::new(),
+        }
+    )
+}
+
+fn fill_rule(rule_id: usize, prods: Vec<parse_ast::Production>, rule_manager: &mut RuleManager) {
+    let mut norm_prods = Vec::with_capacity(prods.len());
+    for prod in prods {
+        norm_prods.push(normalize_production(prod, rule_manager));
+    }
+    let rule_ref = rule_manager.get_rule_mut(rule_id);
+    rule_ref.productions = norm_prods;
+}
+
+fn initialize_parser_element(element: parse_ast::ParserElement, rule_manager: &mut RuleManager, cached_prods: &mut Vec<(Vec<parse_ast::Production>, usize)>) {
     match element {
         parse_ast::ParserElement::Rule(rule) => {
-            normalize_rule(rule, rule_manager);
+            let id = initialize_rule(rule.name, rule.return_type, rule_manager);
+            cached_prods.push((rule.productions, id));
         },  
         parse_ast::ParserElement::Group{name, ret, rules} => {
-            // for elem in rules {
-            //     normalize_parser_element(elem);
-            // }
+            _ = name;
+            _ = ret;
+            _ = rules;
             panic!("We don't do groups yet, please change your mind :)");
         },
     }
@@ -519,13 +548,368 @@ fn normalize_parser_element(element: parse_ast::ParserElement, rule_manager: &mu
 
 pub fn normalize_ast(parser: parse_ast::Parser) -> Parser {
     let mut rule_manager = RuleManager::new();
+
+    // Note: Rule normalization is split into two steps: 
+    //  initialization: regester each rule with its name and return type
+    //  filling: normalize the rules productions and add it to the rule
+    // The split allows the types of rules to be accessed before they are normalized
+
+    // Cached prods while initializing rules with name and return type
+    // This prevents needing to index through the Parse elements tree twice, which would force cloning the name and return types
+    let mut cached_prods: Vec<(Vec<parse_ast::Production>, usize)> = Vec::new();
+   
+    // Initialize all normalized rules with a name and return type (without productions)
     for element in parser.parser_elements {
-        normalize_parser_element(element, &mut rule_manager);
+        initialize_parser_element(element, &mut rule_manager, &mut cached_prods);
     }
+
+    // normalize the cached productions and fill the rules with them
+    for (prods, rule_id) in cached_prods {
+        fill_rule(rule_id, prods, &mut rule_manager);
+    }
+
     Parser {
         name: parser.name,
         return_type: parser.return_type,
-        parser_elements: rule_manager.dump_rules(),
+        rules: rule_manager.dump_rules(),
     }
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+
+    #[test]
+    fn captured_repeat() {
+        // S -> a:(A()*) ( "ident" C() ) {return a.len();} | "term" {return 0;} -> i32 
+        // A -> std::String
+        // C -> u8
+       
+        // conditions contained within the 
+        let captured_a_star = parse_ast::CapturedCondition::Rule(Ident::new("A", Span::call_site()));
+       
+        let parsed_ast = parse_ast::Parser {
+            name: Ident::new("parser_name", Span::call_site()),
+            return_type: quote!{Vec<i32>},
+            parser_elements: vec![
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("S", Span::call_site()),
+                    return_type: quote!{i32},
+                    productions: vec![
+                        // S -> a:(A()*) ( "ident" C() ) {return a.len();}
+                        parse_ast::Production {
+                            code_segment: quote!{{return a.len();}},
+                            condition: vec![
+                                parse_ast::Condition::Captured(Ident::new("a", Span::call_site()),
+                                    parse_ast::CapturedCondition::RepeatMinZero(Box::new(captured_a_star))
+                                ),
+                                parse_ast::Condition::Group(vec![
+                                    parse_ast::Condition::Terminal(Ident::new("ident", Span::call_site())),
+                                    parse_ast::Condition::Rule(Ident::new("C", Span::call_site())),
+                                ])
+                            ]
+                        },
+                        // S -> "term" {return 0;}
+                        parse_ast::Production {
+                            code_segment: quote!{{return 0;}},
+                            condition: vec![
+                                parse_ast::Condition::Terminal(Ident::new("term", Span::call_site())),
+                            ]
+                        }
+                    ],
+                }),
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("A", Span::call_site()),
+                    return_type: quote!{std::String},
+                    productions: vec![],
+                }),
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("C", Span::call_site()),
+                    return_type: quote!{u8},
+                    productions: vec![],
+                }),
+                
+            ],
+        };
+
+        let target_ast = Parser {
+            name: Ident::new("parser_name", Span::call_site()),
+            return_type: quote!{Vec<i32>},
+            rules: vec![
+                Rule {
+                    name: Ident::new("S", Span::call_site()),
+                    return_type: quote!{i32},
+                    productions: vec![
+                        Production {
+                            // S -> a:InternalRepeatRule3() "ident" C() {return a.len();}
+                            condition: vec![
+                                Condition::Captured(Ident::new("a", Span::call_site()), Terminal::Rule(3)), // S:InternalRepeatRule1
+                                Condition::Terminal(Terminal::Const(Ident::new("ident", Span::call_site()))),
+                                Condition::Terminal(Terminal::Rule(2)),
+                            ],
+                            code_segment: quote!{{return a.len();}}
+                        },
+                        // S -> "term" {return 0;}
+                        Production {
+                            code_segment: quote!{{return 0;}},
+                            condition: vec![
+                                Condition::Terminal(Terminal::Const(Ident::new("term", Span::call_site()))),
+                            ]
+                        }
+                    ]
+                },
+                Rule {
+                    name: Ident::new("A", Span::call_site()),
+                    return_type: quote!{std::String},
+                    productions: vec![]
+                },
+                Rule {
+                    name: Ident::new("C", Span::call_site()),
+                    return_type: quote!{u8},
+                    productions: vec![]
+                },
+                Rule {
+                    name: Ident::new("InternalRepeatRule3", Span::call_site()),
+                    return_type: quote!{Vec<std::String>},
+                    productions: vec![
+                        // InternalRepeatRule3 -> epsilon {Vec::new()}
+                        Production {
+                            condition: Vec::new(),
+                            // vec![
+                            //     Condition::Terminal(Terminal::Epsilon())
+                            // ],
+                            code_segment: quote!{{Vec::new()}}
+                        },
+                        // InternalRepeatRule3 -> new:A() v:InternalRepeatRule3() {c.push(new); v}
+                        Production {
+                            condition: vec![
+                                Condition::Captured(Ident::new("new", Span::call_site()), Terminal::Rule(1)), // new:A()
+                                Condition::Captured(Ident::new("v", Span::call_site()), Terminal::Rule(3)), // v:InternalRepeatRule3()
+                            ],
+                            code_segment: quote!{{v.push(new); v}}
+                        },
+                    ]
+                }
+            ]
+        };
+
+        let normalized_ast = normalize_ast(parsed_ast);
+
+        print!("{}\n", normalized_ast);
+        print!("{}\n", target_ast);
+
+        let normalized_str = std::format!("{}", normalized_ast);
+        let target_str = std::format!("{}", target_ast);
+
+        assert!(normalized_str == target_str);
+    }
+
+    #[test]
+    fn captured_group() {
+        // S -> impl_tuple:("value" A() B()) {impl_tuple} -> (Ident, usize, Vec<i8>) 
+        // A -> usize
+        // C -> Vec<i8>
+       
+
+        let parsed_ast = parse_ast::Parser {
+            name: Ident::new("parser_name", Span::call_site()),
+            return_type: quote!{Vec<i32>},
+            parser_elements: vec![
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("S", Span::call_site()),
+                    return_type: quote!{(Ident, usize, Vec<i8>)},
+                    productions: vec![
+                        // S -> impl_tuple:("value" A() B()) {impl_tuple} 
+                        parse_ast::Production {
+                            code_segment: quote!{{impl_tuple}},
+                            condition: vec![
+                                parse_ast::Condition::Captured(Ident::new("impl_tuple", Span::call_site()),
+                                    parse_ast::CapturedCondition::Group(vec![
+                                        parse_ast::CapturedCondition::Terminal(Ident::new("value", Span::call_site())),
+                                        parse_ast::CapturedCondition::Rule(Ident::new("A", Span::call_site())),
+                                        parse_ast::CapturedCondition::Rule(Ident::new("B", Span::call_site())),
+                                    ])
+                                ),
+                            ]
+                        },
+                    ],
+                }),
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("A", Span::call_site()),
+                    return_type: quote!{usize},
+                    productions: vec![],
+                }),
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("B", Span::call_site()),
+                    return_type: quote!{Vec<i8>},
+                    productions: vec![],
+                }),
+                
+            ],
+        };
+
+        let target_ast = Parser {
+            name: Ident::new("parser_name", Span::call_site()),
+            return_type: quote!{Vec<i32>},
+            rules: vec![
+                Rule {
+                    name: Ident::new("S", Span::call_site()),
+                    return_type: quote!{(Ident, usize, Vec<i8>)},
+                    productions: vec![
+                        Production {
+                            // S -> a:InternalRepeatRule3() "ident" C() {return a.len();}
+                            condition: vec![
+                                Condition::Captured(Ident::new("impl_tuple", Span::call_site()), Terminal::Rule(3)), // S:InternalRepeatRule1
+                            ],
+                            code_segment: quote!{{impl_tuple}}
+                        },
+                    ]
+                },
+                Rule {
+                    name: Ident::new("A", Span::call_site()),
+                    return_type: quote!{usize},
+                    productions: vec![]
+                },
+                Rule {
+                    name: Ident::new("B", Span::call_site()),
+                    return_type: quote!{Vec<i8>},
+                    productions: vec![]
+                },
+                Rule {
+                    name: Ident::new("InternalGroupRule3", Span::call_site()),
+                    return_type: quote!{(Ident, usize, Vec<i8>)},
+                    productions: vec![
+                        // InternalRepeatRule3 -> new:A() v:InternalRepeatRule3() {c.push(new); v}
+                        Production {
+                            condition: vec![
+                                Condition::Captured(Ident::new("arg0", Span::call_site()), Terminal::Const(Ident::new("value", Span::call_site()))), // new:A()
+                                Condition::Captured(Ident::new("arg1", Span::call_site()), Terminal::Rule(1)), // arg1:A()
+                                Condition::Captured(Ident::new("arg2", Span::call_site()), Terminal::Rule(2)), // arg2:B()
+                            ],
+                            code_segment: quote!{{(arg0, arg1, arg2)}}
+                        },
+                    ]
+                }
+            ]
+        };
+
+        let normalized_ast = normalize_ast(parsed_ast);
+        
+        let normalized_str = std::format!("{}", normalized_ast);
+        let target_str = std::format!("{}", target_ast);
+        
+        print!("{}\n", normalized_str);
+        print!("{}\n", target_str);
+
+        assert!(normalized_str == target_str);
+    }
+
+    #[test]
+    fn captured_repeate_min_one() {
+        // S -> a:(A())+ B() -> usize
+        // A -> i8
+        // B -> u8
+
+        let captured_a_plus = parse_ast::CapturedCondition::Rule(Ident::new("A", Span::call_site()));
+       
+        let parsed_ast = parse_ast::Parser {
+            name: Ident::new("parser_name", Span::call_site()),
+            return_type: quote!{Vec<i32>},
+            parser_elements: vec![
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("S", Span::call_site()),
+                    return_type: quote!{(Ident, usize, Vec<i8>)},
+                    productions: vec![
+                         // S -> a:(A())+ B() -> usize {}
+                        parse_ast::Production {
+                            code_segment: quote!{{a.len()}},
+                            condition: vec![
+                                parse_ast::Condition::Captured(Ident::new("a", Span::call_site()),
+                                    parse_ast::CapturedCondition::RepeatMinOne(Box::new(captured_a_plus))
+                                ),
+                                parse_ast::Condition::Rule(Ident::new("B", Span::call_site()))
+                            ]
+                        },
+                    ],
+                }),
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("A", Span::call_site()),
+                    return_type: quote!{i8},
+                    productions: vec![],
+                }),
+                parse_ast::ParserElement::Rule (parse_ast::Rule {
+                    name: Ident::new("B", Span::call_site()),
+                    return_type: quote!{u8},
+                    productions: vec![],
+                }),
+                
+            ],
+        };
+
+        let target_ast = Parser {
+            name: Ident::new("parser_name", Span::call_site()),
+            return_type: quote!{Vec<i32>},
+            rules: vec![
+                Rule {
+                    name: Ident::new("S", Span::call_site()),
+                    return_type: quote!{(Ident, usize, Vec<i8>)},
+                    productions: vec![
+                        Production {
+                            // S -> a:InternalRepeatRule3() B() {return a.len();}
+                            condition: vec![
+                                Condition::Captured(Ident::new("a", Span::call_site()), Terminal::Rule(3)), // S:InternalRepeatRule1
+                                Condition::Terminal(Terminal::Rule(2)) , // S:InternalRepeatRule1
+                            ],
+                            code_segment: quote!{{a.len()}}
+                        },
+                    ]
+                },
+                Rule {
+                    name: Ident::new("A", Span::call_site()),
+                    return_type: quote!{i8},
+                    productions: vec![]
+                },
+                Rule {
+                    name: Ident::new("B", Span::call_site()),
+                    return_type: quote!{u8},
+                    productions: vec![]
+                },
+                Rule {
+                    name: Ident::new("InternalRepeatRule3", Span::call_site()),
+                    return_type: quote!{Vec<i8>},
+                    productions: vec![
+                        // InternalRepeatRule3 -> new:A() {vec![new]}
+                        Production {
+                            condition: vec![
+                                Condition::Captured(Ident::new("term", Span::call_site()), Terminal::Rule(1)), // new:A()
+                            ],
+                            code_segment: quote!{{vec![term]}}
+                        },
+                        // InternalRepeatRule3 -> new:A() v:InternalRepeatRule3() {c.push(new); v}
+                        Production {
+                            condition: vec![
+                                Condition::Captured(Ident::new("new", Span::call_site()), Terminal::Rule(1)), // new:A()
+                                Condition::Captured(Ident::new("v", Span::call_site()), Terminal::Rule(3)), // v:InternalRepeatRule3()
+                            ],
+                            code_segment: quote!{{v.push(new); v}}
+                        },
+                    ]
+                }
+            ]
+        };
+
+        let normalized_ast = normalize_ast(parsed_ast);
+        
+        let normalized_str = std::format!("{}", normalized_ast);
+        let target_str = std::format!("{}", target_ast);
+        
+        print!("{}\n", normalized_str);
+        print!("{}\n", target_str);
+
+        assert!(normalized_str == target_str);
+    }
+}

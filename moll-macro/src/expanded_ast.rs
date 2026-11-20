@@ -35,5 +35,5 @@ pub struct Parser {
     pub element_type: TokenStream,
     pub terminal_transitions: Vec<Vec<(TokenStream, Action)>>, // [state idx][_] -> (terminal_tokensteam, action)
     pub non_terminal_transitions: Vec<Vec<(usize, usize)>>, // [state idx][_] -> (non-term idx, target state idx)
-    pub eoi_actions : Vec<EOIAction>, // [state idx] -> end of inpuy action
+    pub eoi_actions : Vec<EOIAction>, // [state idx] -> end of input action
 }

@@ -18,7 +18,7 @@ pub enum FreeCondition {
     RepeatMinZero(Box<FreeCondition>),
     RepeatMinOne(Box<FreeCondition>),
     Optional(Box<FreeCondition>),
-    Teminal(Ident),
+    Terminal(Ident),
     Rule(Ident),
     Literal(Literal),
 }
@@ -29,7 +29,7 @@ pub enum CapturedCondition {
     RepeatMinZero(Box<CapturedCondition>),
     RepeatMinOne(Box<CapturedCondition>),
     Optional(Box<CapturedCondition>),
-    Teminal(Ident),
+    Terminal(Ident),
     Rule(Ident),
     Literal(Literal),
 }
@@ -41,7 +41,7 @@ pub enum Condition {
     RepeatMinZero(Box<FreeCondition>),
     RepeatMinOne(Box<FreeCondition>),
     Optional(Box<FreeCondition>),
-    Teminal(Ident),
+    Terminal(Ident),
     Rule(Ident),
     Literal(Literal),
 }
